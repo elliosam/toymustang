@@ -5,17 +5,19 @@ from skimage import data, exposure,filters,io
 from scipy import ndimage as ndi
 import numpy as np
 import pickle
-#import pandas as pd
 
-### PARKPARSE: this code will take each frame of the current video feed
-### and perform the required calculations to figure out if a car is there
+sigma = 3
+red = []
+blue = []
+green = []
+parkTF = []
 
-cap = cv.VideoCapture('assets/carPark.mp4')
-sigma=3
-red=[]
-blue=[]
-green=[]
-
+# import shape data from parkpick
+try:
+    with open('parkingPositions', 'rb') as f:
+        shapes = pickle.load(f)
+except:
+    print("shapes could not be loaded")
 
 
 def checkMaxima(img, points, perc):
@@ -115,58 +117,37 @@ def checkVariance(img, points, den):
     blue.clear()
     return var
 
-def updateColorFalse(img, shapeID):
-    cv.line(img, (shapes[shapeID]['x1'], shapes[shapeID]['y1']), (shapes[shapeID]['x2'], shapes[shapeID]['y2']), (0,0,255), 2, cv.LINE_AA)
-    cv.line(img, (shapes[shapeID]['x2'], shapes[shapeID]['y2']), (shapes[shapeID]['x3'], shapes[shapeID]['y3']), (0,0,255), 2, cv.LINE_AA)
-    cv.line(img, (shapes[shapeID]['x3'], shapes[shapeID]['y3']), (shapes[shapeID]['x4'], shapes[shapeID]['y4']), (0,0,255), 2, cv.LINE_AA)
-    cv.line(img, (shapes[shapeID]['x4'], shapes[shapeID]['y4']), (shapes[shapeID]['x1'], shapes[shapeID]['y1']), (0,0,255), 2, cv.LINE_AA)
+# set parkTF array to correct size
+count = 0
+while (count < len(shapes)):
+    parkTF.append(shapes[count]["car"])
+    count += 1
 
-def updateColorTrue(img, shapeID):
-    cv.line(img, (shapes[shapeID]['x1'], shapes[shapeID]['y1']), (shapes[shapeID]['x2'], shapes[shapeID]['y2']), (0,255,0), 2, cv.LINE_AA)
-    cv.line(img, (shapes[shapeID]['x2'], shapes[shapeID]['y2']), (shapes[shapeID]['x3'], shapes[shapeID]['y3']), (0,255,0), 2, cv.LINE_AA)
-    cv.line(img, (shapes[shapeID]['x3'], shapes[shapeID]['y3']), (shapes[shapeID]['x4'], shapes[shapeID]['y4']), (0,255,0), 2, cv.LINE_AA)
-    cv.line(img, (shapes[shapeID]['x4'], shapes[shapeID]['y4']), (shapes[shapeID]['x1'], shapes[shapeID]['y1']), (0,255,0), 2, cv.LINE_AA)
-
-# read in polygon information from spotpicker.py
-with open('parkingPositions', 'rb') as f:
-    shapes = pickle.load(f)
-    #print(shapes)
-    
-try:
-    with open('doneTF', 'rb') as f:
-        done = pickle.load(f)
-except:
-    done = False
-
-while (cap.isOpened()):
+while True:
     i = 0
     
+    # load current frame from parkperform.py
     try:
         with open('currentFrame', 'rb') as f:
-            frame = pickle.load(f)
+            bg = pickle.load(f)
     except:
         print("could not load frame from pickle")
-        exit()
     
+    # reset done var to not get new frame until processing finishes
     done = False
-    while i<len(shapes):
-        
-        # grab current frame
-        
-        
-        #bg = cv.resize(frame,(1280,720), interpolation=cv.INTER_CUBIC)
-        bg = frame
-            # pre-processing
+    
+    while (i < len(shapes)):
+        # pre-processing
         img33 = imgg = np.zeros((bg.shape[0], bg.shape[1], 3), dtype = np.uint8)
         blurred = filters.gaussian(bg, sigma=(sigma, sigma), truncate=3.5, channel_axis=-1)
         
         currentPts = np.array([[shapes[i]['x1'], shapes[i]['y1']], [shapes[i]['x2'], shapes[i]['y2']], [shapes[i]['x3'], shapes[i]['y3']], [shapes[i]['x4'], shapes[i]['y4']]])
     
         d = cv.fillPoly(img33, pts=[currentPts], color=(255,255, 255))
-        den = int(np.sum(d == 255)/3)
+        den = int(np.sum(d == 255) / 3)
         indices = np.where(d == [255])
         cord = np.dstack((indices[0], indices[1]))
-        cordss=np.unique(cord,axis=1)
+        cordss=np.unique(cord,axis = 1)
 
         # run through checking algorithms
         maxim = checkMaxima(bg,currentPts,den)
@@ -179,31 +160,23 @@ while (cap.isOpened()):
             
         if ((variInt >= 30) & (maximInt >= 40)):
             shapes[i].update({'car': True})
-            updateColorTrue(frame, i)
+            parkTF[i] = True
         else:
             shapes[i].update({'car': False})
-            updateColorFalse(frame, i)
-        i+=1
-        #cv.imshow("video", frame)
-        perc=0
-            
-        # dump the new information into the pickle file
-        with open('parkingPositions', 'wb') as f:
-            pickle.dump(shapes, f)
+            parkTF[i] = False
+        i += 1
+        perc = 0
         
     done = True
-    with open('doneTF', 'wb') as f:
-        pickle.dump(done, f)
     
-    cv.imshow("output", frame)
-    cv.waitKey(0)
+    try:
+        with open('isCar', 'wb') as f:
+            pickle.dump(parkTF)
+    except:
+        print("could not pickle shapes values")
     
-      
-    #shapes[i].update({'hog':maxim, 'var':vari})
-        
-        
-print("end")
-# df=pd.DataFrame(shapes)
-# print(df)
-# #make sure to change name everytime you use another pic
-# df.to_csv('varhogdata')
+    try:
+        with open('doneTF', 'wb') as f:
+            pickle.dump(done, f)
+    except:
+        print("could not pickle done variable")
